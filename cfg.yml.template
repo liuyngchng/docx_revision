@@ -8,7 +8,6 @@
 
 com:
   # 应用程序 ProgID，根据安装的软件选择：
-# 应用程序 ProgID，根据安装的软件选择：
   #   WPS 个人版:    "Kwps.Application"   ← 注意不是 "WPS.Application"
   #   WPS 企业版:    "WPS.Application"
   #   Word:          "Word.Application"

@@ -277,7 +277,7 @@ def check_paragraph_format(para_info: dict, para_index: int,
     """
     issues = []
 
-font_name = para_info.get("font_name") or ""
+    font_name = para_info.get("font_name") or ""
     font_size = para_info.get("font_size") or 0   # pt
     alignment = para_info.get("alignment")         # 0=left, 1=center, 2=right, 3=justify
     line_spacing = para_info.get("line_spacing") or 0  # pt
