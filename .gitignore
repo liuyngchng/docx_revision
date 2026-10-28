@@ -1,0 +1,38 @@
+# Python 编译文件
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+dist/
+build/
+
+# 虚拟环境
+venv/
+.venv/
+env/
+.env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# 运行时生成的目录
+uploads/*
+!uploads/.gitkeep
+output/*
+!output/.gitkeep
+
+# 系统文件
+Thumbs.db
+.DS_Store
+Desktop.ini
+
+# 日志
+*.log
+
+# 说明：
+# cfg.yml        —— 含真实配置信息，按项目要求提交 git
+# cfg.yml.template —— 模板文件，提交 git

@@ -1,0 +1,65 @@
+# ============================================
+# 党政机关公文格式审核与修订系统 - 配置文件
+# ============================================
+
+# ---- WPS/Word COM 设置 ----
+com:
+  # 应用程序 ProgID，根据安装的软件选择：
+  #   WPS 企业版:  "WPS.Application"
+  #   WPS 专业版:  "WPS.Application"
+  #   Word:        "Word.Application"
+  prog_id: "WPS.Application"
+
+  # 是否可见（调试时可开 True，生产环境建议 False）
+  visible: false
+
+  # 是否在关闭时自动保存（True 则不弹保存对话框）
+  display_alerts: false
+
+# ---- LLM API 设置 ----
+llm:
+  # OpenAI 兼容 API 地址（你们公司的地址）
+  api_base: "https://your-company-api.example.com/v1"
+
+  # API Key
+  api_key: "sk-your-api-key-here"
+
+  # 模型名称
+  model: "your-model-name"
+
+  # 超时时间（秒）
+  timeout: 120
+
+  # 温度（0 = 最确定，1 = 最随机）
+  temperature: 0.1
+
+  # 最大输出 token 数
+  max_tokens: 4096
+
+# ---- 审核设置 ----
+review:
+  # 是否启用格式规则检查
+  enable_rules: true
+
+  # 是否启用 LLM 内容审核
+  enable_llm: true
+
+  # 规则引擎严格程度：strict / normal / loose
+  strictness: "normal"
+
+# ---- 服务设置 ----
+server:
+  host: "127.0.0.1"
+  port: 8080
+
+  # 上传文件最大大小（MB）
+  max_upload_mb: 20
+
+  # 输出目录（修订后的文件存放位置）
+  output_dir: "./output"
+
+  # 上传暂存目录
+  upload_dir: "./uploads"
+
+  # 任务清理时间（天），超过此时间的临时文件自动删除
+  cleanup_days: 7

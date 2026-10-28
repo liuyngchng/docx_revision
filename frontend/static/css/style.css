@@ -1,0 +1,301 @@
+/* ========================================
+   党政机关公文审核系统 — 样式
+   简洁专业的公文风格
+   ======================================== */
+
+/* --- 基础重置 --- */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+    --red: #C41E3A;          /* 党政红 */
+    --red-light: #FDF2F4;
+    --gold: #B8860B;
+    --text: #1a1a1a;
+    --text-secondary: #666;
+    --bg: #F5F2EB;           /* 米纸色 */
+    --card-bg: #FFFFFF;
+    --border: #E0D8C8;
+    --success: #2E7D32;
+    --warning: #E65100;
+    --info: #1565C0;
+    --radius: 8px;
+    --shadow: 0 2px 12px rgba(0,0,0,0.06);
+}
+
+body {
+    font-family: "Microsoft YaHei", "微软雅黑", "Noto Sans SC", sans-serif;
+    font-size: 15px;
+    color: var(--text);
+    background: var(--bg);
+    line-height: 1.6;
+    min-height: 100vh;
+}
+
+/* --- 顶部 --- */
+.header {
+    background: var(--red);
+    color: #fff;
+    padding: 24px 0;
+    box-shadow: 0 2px 8px rgba(196,30,58,0.2);
+}
+.header-inner {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 0 24px;
+}
+.header h1 { font-size: 24px; font-weight: 700; }
+.header .subtitle { font-size: 13px; opacity: 0.85; }
+
+/* --- 主体 --- */
+.main {
+    max-width: 900px;
+    margin: 24px auto;
+    padding: 0 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+/* --- 卡片 --- */
+.card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+}
+.card-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    background: #FAFAFA;
+}
+.card-header h2 { font-size: 17px; font-weight: 600; }
+.card-body { padding: 24px 20px; }
+
+.step-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px; height: 28px;
+    background: var(--red);
+    color: #fff;
+    border-radius: 50%;
+    font-size: 14px;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+/* --- 上传区 --- */
+.upload-area {
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 40px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.upload-area:hover, .upload-area.drag-over {
+    border-color: var(--red);
+    background: var(--red-light);
+}
+.upload-icon { font-size: 48px; margin-bottom: 12px; }
+.upload-text { font-size: 16px; color: var(--text); }
+.upload-text a { color: var(--red); text-decoration: none; font-weight: 600; }
+.upload-text a:hover { text-decoration: underline; }
+.upload-hint { font-size: 12px; color: var(--text-secondary); margin-top: 8px; }
+
+/* 文件信息 */
+.file-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    background: #F0F9EB;
+    border-radius: var(--radius);
+    margin-top: 12px;
+}
+.file-icon { font-size: 20px; }
+.file-size { color: var(--text-secondary); font-size: 13px; }
+.remove-file { color: var(--red); text-decoration: none; margin-left: auto; font-size: 18px; }
+
+/* --- 设置 --- */
+.settings-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+.toggle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    font-size: 14px;
+}
+.toggle input[type="checkbox"] {
+    width: 18px; height: 18px;
+    accent-color: var(--red);
+}
+.action-row { display: flex; gap: 12px; align-items: center; }
+
+/* 按钮 */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 24px;
+    border: none;
+    border-radius: var(--radius);
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.2s;
+}
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: var(--red); color: #fff; }
+.btn-primary:hover:not(:disabled) { background: #A01830; }
+.btn-outline {
+    background: #fff;
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+}
+.btn-outline:hover { background: #f5f5f5; }
+.btn-success { background: var(--success); color: #fff; }
+.btn-success:hover { background: #1B5E20; }
+
+/* --- 进度 --- */
+.progress-bar-container {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+.progress-bar {
+    flex: 1;
+    height: 8px;
+    background: #E8E8E8;
+    border-radius: 4px;
+    overflow: hidden;
+}
+.progress-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--red);
+    border-radius: 4px;
+    transition: width 0.3s ease;
+}
+.progress-fill.indeterminate {
+    width: 40%;
+    animation: indeterminate 1.5s ease-in-out infinite;
+}
+@keyframes indeterminate {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(350%); }
+}
+.progress-text { font-size: 14px; color: var(--text-secondary); white-space: nowrap; }
+.status-detail { margin-top: 12px; font-size: 14px; color: var(--text-secondary); }
+
+/* --- 统计 --- */
+.stats-row {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+}
+.stat-card {
+    flex: 1;
+    min-width: 100px;
+    padding: 16px;
+    border-radius: var(--radius);
+    text-align: center;
+    font-weight: 600;
+}
+.stat-card .stat-number { font-size: 32px; font-weight: 700; }
+.stat-card .stat-label { font-size: 13px; margin-top: 4px; }
+.stat-error { background: #FFF5F5; color: var(--red); }
+.stat-warning { background: #FFF8E1; color: var(--warning); }
+.stat-info { background: #E3F2FD; color: var(--info); }
+.stat-total { background: #F0F9EB; color: var(--success); }
+
+/* --- 问题列表 --- */
+.issues-list { margin-bottom: 20px; }
+.issue-item {
+    padding: 14px 16px;
+    border-left: 4px solid var(--border);
+    border-bottom: 1px solid #f0f0f0;
+    transition: background 0.15s;
+}
+.issue-item:hover { background: #FAFAFA; }
+.issue-item.severity-error { border-left-color: var(--red); }
+.issue-item.severity-warning { border-left-color: var(--warning); }
+.issue-item.severity-info { border-left-color: var(--info); }
+.issue-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+.issue-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #fff;
+    text-transform: uppercase;
+}
+.badge-error { background: var(--red); }
+.badge-warning { background: var(--warning); }
+.badge-info { background: var(--info); }
+.issue-source {
+    font-size: 11px;
+    color: var(--text-secondary);
+    background: #f0f0f0;
+    padding: 1px 6px;
+    border-radius: 3px;
+}
+.issue-title { font-weight: 600; font-size: 15px; }
+.issue-desc { font-size: 13px; color: var(--text-secondary); margin-top: 4px; }
+.issue-suggestion {
+    font-size: 13px;
+    color: var(--success);
+    margin-top: 4px;
+    padding-left: 12px;
+    border-left: 2px solid var(--success);
+}
+.issue-compare {
+    display: flex;
+    gap: 16px;
+    margin-top: 8px;
+    font-size: 13px;
+}
+.issue-compare .orig { color: var(--red); text-decoration: line-through; flex: 1; }
+.issue-compare .revised { color: var(--success); flex: 1; }
+
+/* --- 下载行 --- */
+.download-row { text-align: center; margin-top: 16px; }
+
+/* --- 错误 --- */
+.error-body {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    color: var(--red);
+}
+.error-icon { font-size: 28px; flex-shrink: 0; }
+
+/* --- 页脚 --- */
+.footer {
+    text-align: center;
+    padding: 20px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    border-top: 1px solid var(--border);
+    margin-top: 32px;
+}
+
+/* --- Helpers --- */
+.hidden { display: none !important; }

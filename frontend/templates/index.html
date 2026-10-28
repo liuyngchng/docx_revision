@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>党政机关公文审核与修订系统</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <!-- 顶部导航 -->
+    <header class="header">
+        <div class="header-inner">
+            <h1>📄 公文审核与修订系统</h1>
+            <span class="subtitle">GB/T 9704 — 党政机关公文格式国家标准</span>
+        </div>
+    </header>
+
+    <main class="main">
+        <!-- 步骤 1: 上传 -->
+        <section class="card" id="upload-section">
+            <div class="card-header">
+                <span class="step-badge">1</span>
+                <h2>上传公文文档</h2>
+            </div>
+            <div class="card-body">
+                <div class="upload-area" id="drop-zone">
+                    <input type="file" id="file-input" accept=".docx" hidden>
+                    <div class="upload-icon">📥</div>
+                    <p class="upload-text">拖拽 .docx 文件到此处，或 <a href="#" id="browse-link">点击浏览</a></p>
+                    <p class="upload-hint">仅支持 .docx 格式，最大 20MB</p>
+                </div>
+                <div id="file-info" class="file-info hidden">
+                    <span class="file-icon">📎</span>
+                    <span id="file-name"></span>
+                    <span class="file-size" id="file-size"></span>
+                    <a href="#" class="remove-file" id="remove-file">✕</a>
+                </div>
+            </div>
+        </section>
+
+        <!-- 步骤 2: 审核设置 -->
+        <section class="card" id="settings-section">
+            <div class="card-header">
+                <span class="step-badge">2</span>
+                <h2>审核设置</h2>
+            </div>
+            <div class="card-body">
+                <div class="settings-grid">
+                    <label class="toggle">
+                        <input type="checkbox" id="enable-rules" checked>
+                        <span class="toggle-label">格式规则检查（页边距、字体、行距等）</span>
+                    </label>
+                    <label class="toggle">
+                        <input type="checkbox" id="enable-llm" checked>
+                        <span class="toggle-label">LLM 内容审核（文种、语言、逻辑等）</span>
+                    </label>
+                </div>
+                <div class="action-row">
+                    <button class="btn btn-primary" id="btn-start" disabled>
+                        🚀 开始审核与修订
+                    </button>
+                    <button class="btn btn-outline hidden" id="btn-reset">
+                        重新开始
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- 步骤 3: 审核进度 -->
+        <section class="card hidden" id="progress-section">
+            <div class="card-header">
+                <span class="step-badge">3</span>
+                <h2>审核进度</h2>
+            </div>
+            <div class="card-body">
+                <div class="progress-bar-container">
+                    <div class="progress-bar" id="progress-bar">
+                        <div class="progress-fill" id="progress-fill"></div>
+                    </div>
+                    <span class="progress-text" id="progress-text">准备中...</span>
+                </div>
+                <div id="status-detail" class="status-detail"></div>
+            </div>
+        </section>
+
+        <!-- 步骤 4: 结果 -->
+        <section class="card hidden" id="result-section">
+            <div class="card-header">
+                <span class="step-badge">4</span>
+                <h2>审核结果</h2>
+            </div>
+            <div class="card-body">
+                <div class="stats-row" id="stats-row"></div>
+                <div class="issues-list" id="issues-list"></div>
+                <div class="download-row hidden" id="download-row">
+                    <a class="btn btn-success" id="btn-download" href="#">
+                        📥 下载修订后的文档
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- 错误提示 -->
+        <section class="card hidden" id="error-section">
+            <div class="card-body error-body">
+                <span class="error-icon">⚠️</span>
+                <div class="error-content">
+                    <strong>处理出错</strong>
+                    <p id="error-message"></p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <p>基于 python-docx + WPS COM 实现 | OOXML 标准修订模式 (Track Changes)</p>
+    </footer>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
