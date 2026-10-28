@@ -534,16 +534,25 @@ class ComRevisionApplier:
     # 高层接口：应用问题清单
     # ------------------------------------------------------------------
 
-    def apply_issues(self, issues: list[Issue]) -> dict:
+    def apply_issues(self, issues: list[Issue],
+                      on_progress: Optional[Callable[[int, int, str], None]] = None) -> dict:
         """
         根据问题清单应用修改。
+        on_progress(current, total, message) — 每处理一条回调一次（1-based）。
         返回统计信息：{"applied": N, "skipped": N, "warnings": [...]}
         """
+        total = len(issues)
         applied = 0
         skipped = 0
         warnings: list[str] = []
 
-        for issue in issues:
+        for i, issue in enumerate(issues):
+            label = issue.title or issue.category.value
+            msg = f"修改 {i + 1}/{total}：{label}..."
+            print(f"[apply] {msg}")
+            if on_progress:
+                on_progress(i + 1, total, msg)
+
             try:
                 ok, warns = self._apply_single_issue(issue)
                 if ok:
@@ -634,13 +643,14 @@ class ComRevisionApplier:
 # ---------------------------------------------------------------------------
 
 def apply_revisions(input_path: str | Path, issues: list[Issue],
-                    output_path: str | Path, com_config: ComConfig) -> dict:
+                    output_path: str | Path, com_config: ComConfig,
+                    on_progress: Optional[Callable[[int, int, str], None]] = None) -> dict:
     """便捷函数：在 COM worker 中直接执行修订（不再持有全局锁）。"""
     applier = ComRevisionApplier(com_config)
     try:
         applier.connect()
         applier.open_document(input_path)
-        stats = applier.apply_issues(issues)
+        stats = applier.apply_issues(issues, on_progress=on_progress)
         applier.save_as(output_path)
         return {"path": str(output_path), "stats": stats}
     finally:

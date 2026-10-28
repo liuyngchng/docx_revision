@@ -50,6 +50,9 @@ def _result_to_dict(r: ReviewResult) -> dict:
         "error_message": r.error_message,
         "started_at": r.started_at.isoformat() if r.started_at else None,
         "finished_at": r.finished_at.isoformat() if r.finished_at else None,
+        "apply_current": r.apply_current,
+        "apply_total": r.apply_total,
+        "apply_message": r.apply_message,
     }
 
 
@@ -62,6 +65,9 @@ def _result_from_dict(d: dict) -> ReviewResult:
         error_message=d.get("error_message"),
         started_at=datetime.fromisoformat(d["started_at"]) if d.get("started_at") else None,
         finished_at=datetime.fromisoformat(d["finished_at"]) if d.get("finished_at") else None,
+        apply_current=d.get("apply_current", 0),
+        apply_total=d.get("apply_total", 0),
+        apply_message=d.get("apply_message", ""),
     )
 
 
@@ -308,6 +314,9 @@ def create_app(config_path: str | None = None) -> FastAPI:
             issues=result.issues,
             download_url=download_url,
             error_message=result.error_message,
+            apply_current=result.apply_current,
+            apply_total=result.apply_total,
+            apply_message=result.apply_message,
         )
 
     @app.post("/api/apply/{task_id}")
@@ -343,9 +352,20 @@ def create_app(config_path: str | None = None) -> FastAPI:
             """由 COM worker 线程执行（串行）。"""
             try:
                 result.status = "applying"
+                result.apply_total = len(result.issues)
+                result.apply_current = 0
+                result.apply_message = "连接 WPS/Word..."
                 task_store.save()
+
+                def on_progress(current: int, total: int, msg: str):
+                    result.apply_current = current
+                    result.apply_total = total
+                    result.apply_message = msg
+                    task_store.save()
+
                 outcome = apply_revisions_com(
-                    doc_path, result.issues, output_path, config.com
+                    doc_path, result.issues, output_path, config.com,
+                    on_progress=on_progress,
                 )
                 stats = outcome.get("stats", {})
                 print(f"[apply] {task_id} stats={stats}")
@@ -411,9 +431,20 @@ def create_app(config_path: str | None = None) -> FastAPI:
                     """COM 修订（queue worker 串行执行）"""
                     try:
                         result.status = "applying"
+                        result.apply_total = len(result.issues)
+                        result.apply_current = 0
+                        result.apply_message = "连接 WPS/Word..."
                         task_store.save()
+
+                        def on_progress(current, total, msg):
+                            result.apply_current = current
+                            result.apply_total = total
+                            result.apply_message = msg
+                            task_store.save()
+
                         outcome = apply_revisions_com(
-                            doc_path, result.issues, output_path, config.com
+                            doc_path, result.issues, output_path, config.com,
+                            on_progress=on_progress,
                         )
                         stats = outcome.get("stats", {})
                         print(f"[apply] {task_id} stats={stats}")

@@ -42,6 +42,7 @@
     let taskId = null;
     let pollTimer = null;
     let queuePollTimer = null;
+    let taskStartTime = null;
 
     // ---- 工具函数 ----
     function formatFileSize(bytes) {
@@ -50,12 +51,26 @@
         return (bytes / (1024 * 1024)).toFixed(1) + " MB";
     }
 
+    function formatElapsed(sec) {
+        if (sec < 60) return sec + "秒";
+        var m = Math.floor(sec / 60);
+        var s = sec % 60;
+        return m + "分" + s + "秒";
+    }
+
+    function elapsedText() {
+        if (!taskStartTime) return "";
+        var sec = Math.floor((Date.now() - taskStartTime) / 1000);
+        return "（已用 " + formatElapsed(sec) + "）";
+    }
+
     function show(el) { if (el) el.classList.remove("hidden"); }
     function hide(el) { if (el) el.classList.add("hidden"); }
 
     function resetAll() {
         currentFile = null;
         taskId = null;
+        taskStartTime = null;
         if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
         if (queuePollTimer) { clearInterval(queuePollTimer); queuePollTimer = null; }
         hide(fileInfo);
@@ -183,8 +198,9 @@
 
     // ---- 轮询状态 ----
     function startPolling() {
+        taskStartTime = Date.now();
         if (pollTimer) clearInterval(pollTimer);
-        pollTimer = setInterval(pollStatus, 2000);
+        pollTimer = setInterval(pollStatus, 1000);
         // 同时轮询队列信息
         if (queuePollTimer) clearInterval(queuePollTimer);
         queuePollTimer = setInterval(pollQueue, 3000);
@@ -289,16 +305,29 @@
             switch (status.status) {
                 case "processing":
                     setProgress(40, "审核中...");
-                    statusDetail.textContent = "正在执行格式规则检查和 LLM 内容审核...";
+                    statusDetail.textContent = "正在执行格式规则检查和 LLM 内容审核..." +
+                        elapsedText();
                     break;
                 case "queued":
                     setProgress(45, "等待 WPS/Word 空闲...");
-                    statusDetail.textContent = "修订任务已排队，等待 WPS/Word COM 资源空闲后自动执行...";
+                    statusDetail.textContent = "修订任务已排队，等待 WPS/Word COM 资源空闲后自动执行..." +
+                        elapsedText();
                     pollQueue();
                     break;
                 case "applying":
                     setProgress(70, "应用修订中...");
-                    statusDetail.textContent = "正在通过 WPS COM 以修订模式应用修改...";
+                    if (status.apply_current > 0 && status.apply_total > 0) {
+                        statusDetail.textContent =
+                            status.apply_message +
+                            " (" + status.apply_current + "/" + status.apply_total + ")" +
+                            elapsedText();
+                        // 动态推进进度条：基础 70% + 按完成比例加到 95%
+                        var ratio = status.apply_current / status.apply_total;
+                        setProgress(70 + Math.round(ratio * 25), "应用修订中...");
+                    } else {
+                        statusDetail.textContent = "正在通过 WPS COM 以修订模式应用修改..." +
+                            elapsedText();
+                    }
                     break;
                 case "reviewed":
                     setProgress(60, "审核完成，发现 " + status.total_issues + " 个问题");
