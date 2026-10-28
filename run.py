@@ -90,7 +90,7 @@ def main():
     print("  按 Ctrl+C 停止服务")
     print()
 
-    uvicorn.run(app, host=host, port=port, log_level="info")
+    uvicorn.run(app, host=host, port=port, log_level="info", access_log=False)
 
 
 if __name__ == "__main__":

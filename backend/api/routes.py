@@ -20,6 +20,7 @@ from backend.core.models import (
 )
 from backend.review.processor import ReviewProcessor
 from backend.revision.applier import apply_revisions as apply_revisions_com
+from backend.revision.applier import get_com_queue
 
 
 # ---------------------------------------------------------------------------
@@ -118,6 +119,21 @@ class TaskStore:
         if stale:
             self.save()
 
+    def reset_transient_states(self):
+        """服务重启时，将瞬态状态（后台线程已消失）回退到稳定状态。"""
+        transitions = {
+            "queued": "reviewed",    # 审核已完成，COM 锁丢失，重试即可
+            "applying": "reviewed",  # COM 操作中断，重试即可
+            "processing": "uploaded", # 审核中断，需重新触发
+        }
+        fixed = []
+        for task_id, r in self.data.items():
+            if r.status in transitions:
+                r.status = transitions[r.status]
+                fixed.append(task_id)
+        if fixed:
+            self.save()
+
 
 # ---------------------------------------------------------------------------
 # 过期文件清理
@@ -166,6 +182,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
     # 启动时清理过期文件与过期任务
     cleanup_old_files(config, config.server.cleanup_days)
     task_store.prune(config.server.cleanup_days)
+    task_store.reset_transient_states()
 
     # 前端静态文件
     frontend_dir = Path(__file__).resolve().parent.parent.parent / "frontend"
@@ -312,14 +329,18 @@ def create_app(config_path: str | None = None) -> FastAPI:
             raise HTTPException(404, "原始文件未找到")
         doc_path = files[0]
 
-        result.status = "queued"  # 等待 WPS/Word COM 空闲（COM 单实例，串行执行）
-        task_store.save()
-
         output_dir = Path(config.server.output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / f"{task_id}_revised_{result.file_name}"
 
-        def run_apply():
+        # 入队前先持久化，避免前端误以为"未排队"
+        result.status = "queued"
+        result.finished_at = None
+        result.error_message = None
+        task_store.save()
+
+        def com_work():
+            """由 COM worker 线程执行（串行）。"""
             try:
                 result.status = "applying"
                 task_store.save()
@@ -336,12 +357,13 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 result.finished_at = datetime.now()
                 task_store.save()
 
-        background_tasks.add_task(run_apply)
+        com_queue = get_com_queue()
+        com_queue.enqueue(task_id, result.file_name, com_work)
 
         return JSONResponse({
             "task_id": task_id,
             "status": "queued",
-            "message": "已加入修订队列，等待 WPS/Word 空闲后自动执行...",
+            "message": "已加入修订队列，等待 WPS/Word COM 资源空闲后自动执行...",
         })
 
     @app.post("/api/review-and-apply/{task_id}")
@@ -377,21 +399,38 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 if not result.issues:
                     result.status = "done"
                     shutil.copy(doc_path, output_path)
+                    result.finished_at = datetime.now()
+                    task_store.save()
                     return
 
-                # 2. 排队并通过 COM 以修订模式应用修改
+                # 2. 审核完成，入队等待 COM worker 执行修订
                 result.status = "queued"
                 task_store.save()
-                outcome = apply_revisions_com(
-                    doc_path, result.issues, output_path, config.com
-                )
-                stats = outcome.get("stats", {})
-                print(f"[apply] {task_id} stats={stats}")
-                result.status = "done"
+
+                def com_work():
+                    """COM 修订（queue worker 串行执行）"""
+                    try:
+                        result.status = "applying"
+                        task_store.save()
+                        outcome = apply_revisions_com(
+                            doc_path, result.issues, output_path, config.com
+                        )
+                        stats = outcome.get("stats", {})
+                        print(f"[apply] {task_id} stats={stats}")
+                        result.status = "done"
+                    except Exception as e:
+                        result.status = "error"
+                        result.error_message = str(e)
+                    finally:
+                        result.finished_at = datetime.now()
+                        task_store.save()
+
+                com_queue = get_com_queue()
+                com_queue.enqueue(task_id, result.file_name, com_work)
+
             except Exception as e:
                 result.status = "error"
                 result.error_message = str(e)
-            finally:
                 result.finished_at = datetime.now()
                 task_store.save()
 
@@ -426,6 +465,39 @@ def create_app(config_path: str | None = None) -> FastAPI:
             filename=safe_name,
             media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         )
+
+    @app.get("/api/queue")
+    async def get_queue():
+        """查询 COM 修订队列（当前执行中 + 排队中）"""
+        return get_com_queue().get_state()
+
+    @app.post("/api/cancel/{task_id}")
+    async def cancel_queued_task(task_id: str):
+        """取消排队中的修订任务（已在执行中的无法取消）"""
+        if task_id not in task_store:
+            raise HTTPException(404, "任务不存在")
+
+        result = task_store[task_id]
+        if result.status != "queued":
+            raise HTTPException(400, f"当前状态 '{result.status}' 不可取消")
+
+        # 尝试从队列移除
+        if get_com_queue().cancel(task_id):
+            result.status = "reviewed"  # 回退到"审核完成"，可重新申请修订
+            result.error_message = "已由用户取消排队"
+            task_store.save()
+            return JSONResponse({
+                "task_id": task_id,
+                "status": "reviewed",
+                "message": "已取消排队",
+            })
+
+        # 已不在排队队列里（可能正在执行或已执行完）
+        return JSONResponse({
+            "task_id": task_id,
+            "status": result.status,
+            "message": "任务已在执行中或已完成，无法取消",
+        })
 
     @app.get("/api/health")
     async def health():

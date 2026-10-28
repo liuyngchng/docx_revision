@@ -5,6 +5,7 @@ LLM API 客户端（OpenAI 兼容格式）
 
 import json
 import logging
+import time
 from typing import Any, Optional
 
 import httpx
@@ -12,6 +13,11 @@ import httpx
 from backend.core.config import LlmConfig
 
 logger = logging.getLogger(__name__)
+
+# 可重试的错误：网关超时、服务不可用、请求超时
+_RETRYABLE_STATUSES = {429, 502, 503, 504}
+_MAX_RETRIES = 3
+_RETRY_BASE_DELAY = 2  # 秒，指数退避：2s → 4s → 8s
 
 
 class LlmClient:
@@ -64,21 +70,49 @@ class LlmClient:
         )
 
         try:
-            with httpx.Client(timeout=self.timeout) as client:
-                resp = client.post(url, headers=self._headers(), json=payload)
-                resp.raise_for_status()
-                result = resp.json()
-                # 提取并记录首条 choice 的 token 使用量
-                usage = result.get("usage", {})
-                logger.info(
-                    "LLM 响应: prompt_tokens=%s, completion_tokens=%s, total_tokens=%s",
-                    usage.get("prompt_tokens", "?"),
-                    usage.get("completion_tokens", "?"),
-                    usage.get("total_tokens", "?"),
-                )
-                return result
+            last_error: Optional[Exception] = None
+            for attempt in range(_MAX_RETRIES + 1):
+                if attempt > 0:
+                    delay = _RETRY_BASE_DELAY * (2 ** (attempt - 1))
+                    logger.warning(
+                        "LLM 请求第 %d 次重试（%d/%d），等待 %.0f 秒...",
+                        attempt, attempt, _MAX_RETRIES, delay,
+                    )
+                    time.sleep(delay)
+
+                try:
+                    with httpx.Client(timeout=self.timeout) as client:
+                        resp = client.post(url, headers=self._headers(), json=payload)
+                        resp.raise_for_status()
+                        result = resp.json()
+                        # 提取并记录首条 choice 的 token 使用量
+                        usage = result.get("usage", {})
+                        logger.info(
+                            "LLM 响应: prompt_tokens=%s, completion_tokens=%s, total_tokens=%s",
+                            usage.get("prompt_tokens", "?"),
+                            usage.get("completion_tokens", "?"),
+                            usage.get("total_tokens", "?"),
+                        )
+                        return result
+                except (httpx.TimeoutException, httpx.HTTPStatusError) as e:
+                    retryable = False
+                    if isinstance(e, httpx.TimeoutException):
+                        retryable = True
+                    elif isinstance(e, httpx.HTTPStatusError) \
+                            and e.response.status_code in _RETRYABLE_STATUSES:
+                        retryable = True
+
+                    last_error = e
+                    if not retryable or attempt >= _MAX_RETRIES:
+                        raise
+                    # 可重试错误：继续下一轮
+                    continue
+
+            # 理论上不会走到这里，防御性兜底
+            assert last_error is not None
+            raise last_error
         except httpx.TimeoutException as e:
-            raise RuntimeError(f"LLM API 请求超时（{self.timeout}秒）: {e}")
+            raise RuntimeError(f"LLM API 请求超时（{self.timeout}秒，已重试）: {e}")
         except httpx.HTTPStatusError as e:
             raise RuntimeError(
                 f"LLM API 返回错误状态 {e.response.status_code}: "

@@ -14,8 +14,7 @@
   - 若本机已有用户正在使用的 WPS/Word 实例，则附着使用，绝不修改其
     可见性，也绝不执行 Quit()（避免关闭用户正在编辑的文档）；
   - 仅当由本系统自行启动实例时，才隐藏窗口并在结束后 Quit()。
-  - COM 是单线程模型：全局锁保证同一时刻只有一个任务在操作 COM，
-    其余任务排队等待。
+  - COM 是单线程模型：单个 worker 线程串行处理排队的任务。
 
 WPS 兼容性说明：
   - WPS 文字的 COM ProgID 为 "Kwps.Application"（个人版；注意不是 "WPS.Application"，
@@ -26,8 +25,10 @@ WPS 兼容性说明：
 """
 
 import threading
+import time
+from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Callable
 
 from backend.core.config import ComConfig
 from backend.core.models import Issue, IssueCategory
@@ -71,8 +72,116 @@ def mm_to_pt(mm: float) -> float:
     return mm * MM_TO_PT
 
 
-# COM 单线程模型：全局锁，同一时刻只允许一个任务操作 WPS/Word
-_COM_LOCK = threading.Lock()
+# ---------------------------------------------------------------------------
+# COM 任务队列 —— 显式队列，前端可查看/取消
+# ---------------------------------------------------------------------------
+
+class ComQueue:
+    """
+    串行 COM 任务队列。
+
+    替换隐式 threading.Lock，提供队列可见性和任务取消功能。
+    通过 GET /api/queue 可查当前状态；通过 POST /api/cancel/{task_id} 可取消排队中的任务。
+    """
+
+    def __init__(self):
+        self._pending: list[dict] = []   # [{task_id, file_name, added_at}]
+        self._running: Optional[dict] = None
+        self._lock = threading.Lock()
+        self._worker_running = False
+        self._worker_thread: Optional[threading.Thread] = None
+
+    def start_worker(self):
+        """启动后台 worker 线程（幂等）。"""
+        if self._worker_running:
+            return
+        self._worker_running = True
+        self._worker_thread = threading.Thread(
+            target=self._worker_loop, daemon=True, name="com-queue-worker"
+        )
+        self._worker_thread.start()
+
+    def _worker_loop(self):
+        """Worker 主循环：取出队列头部任务，执行，完成后再取下一个。"""
+        while self._worker_running:
+            item = None
+            with self._lock:
+                if self._pending and self._running is None:
+                    item = self._pending.pop(0)
+                    item["started_at"] = datetime.now().isoformat()
+                    self._running = item
+
+            if item:
+                fn = item["work_fn"]
+                task_id = item["task_id"]
+                try:
+                    fn()
+                except Exception:
+                    pass
+                finally:
+                    with self._lock:
+                        if self._running and self._running["task_id"] == task_id:
+                            self._running = None
+            else:
+                time.sleep(0.5)
+
+    def enqueue(self, task_id: str, file_name: str, work_fn: Callable):
+        """
+        非阻塞：将任务加入队列，由 worker 串行执行。
+        调用方自行在 work_fn 里处理 COM 操作（connect/open/apply/save/close）
+        并通过 task_store 更新状态（queued → applying → done/error）。
+        """
+        self.start_worker()
+        item = {
+            "task_id": task_id,
+            "file_name": file_name,
+            "added_at": datetime.now().isoformat(),
+            "work_fn": work_fn,
+        }
+        with self._lock:
+            self._pending.append(item)
+
+    def cancel(self, task_id: str) -> bool:
+        """取消排队中的任务。返回 True 表示取消成功，False 表示不存在或已在执行中。"""
+        with self._lock:
+            for item in self._pending:
+                if item["task_id"] == task_id:
+                    self._pending.remove(item)
+                    return True
+            return False
+
+    def get_state(self) -> dict:
+        """返回当前队列状态：{running, queued}。"""
+        with self._lock:
+            queued_list = []
+            for i, item in enumerate(self._pending):
+                queued_list.append({
+                    "task_id": item["task_id"],
+                    "file_name": item["file_name"],
+                    "added_at": item["added_at"],
+                    "position": i + 1,
+                })
+            running_info = None
+            if self._running:
+                running_info = {
+                    "task_id": self._running["task_id"],
+                    "file_name": self._running["file_name"],
+                    "added_at": self._running["added_at"],
+                    "started_at": self._running.get("started_at"),
+                }
+            return {"running": running_info, "queued": queued_list}
+
+
+# 全局单例
+_COM_QUEUE: Optional[ComQueue] = None
+
+
+def get_com_queue() -> ComQueue:
+    """获取全局 COM 任务队列单例。"""
+    global _COM_QUEUE
+    if _COM_QUEUE is None:
+        _COM_QUEUE = ComQueue()
+    return _COM_QUEUE
 
 
 # ---------------------------------------------------------------------------
@@ -519,38 +628,6 @@ class ComRevisionApplier:
 
         return applied, warnings
 
-    # ------------------------------------------------------------------
-    # 总入口
-    # ------------------------------------------------------------------
-
-    def apply(self, input_path: str | Path, issues: list[Issue],
-              output_path: str | Path) -> dict:
-        """
-        完整流程：排队 → 打开 → 修订 → 保存 → 关闭。
-
-        全局锁串行化所有 COM 任务（WPS/Word 单实例模型），
-        等待超时抛异常。返回 {"path": 输出路径, "stats": 应用统计}。
-        """
-        input_path = Path(input_path)
-        output_path = Path(output_path)
-
-        # 排队等待 COM 资源（最多 10 分钟）
-        if not _COM_LOCK.acquire(timeout=600):
-            raise RuntimeError("等待 WPS/Word COM 资源超时，请稍后重试")
-
-        try:
-            self.connect()
-            self.open_document(input_path)
-            try:
-                stats = self.apply_issues(issues)
-                self.save_as(output_path)
-            finally:
-                self.close()
-        finally:
-            _COM_LOCK.release()
-
-        return {"path": str(output_path), "stats": stats}
-
 
 # ---------------------------------------------------------------------------
 # 便捷函数
@@ -558,6 +635,13 @@ class ComRevisionApplier:
 
 def apply_revisions(input_path: str | Path, issues: list[Issue],
                     output_path: str | Path, com_config: ComConfig) -> dict:
-    """便捷函数：通过 COM 应用修订，返回 {"path": ..., "stats": ...}"""
+    """便捷函数：在 COM worker 中直接执行修订（不再持有全局锁）。"""
     applier = ComRevisionApplier(com_config)
-    return applier.apply(input_path, issues, output_path)
+    try:
+        applier.connect()
+        applier.open_document(input_path)
+        stats = applier.apply_issues(issues)
+        applier.save_as(output_path)
+        return {"path": str(output_path), "stats": stats}
+    finally:
+        applier.close()

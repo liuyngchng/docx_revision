@@ -80,6 +80,10 @@ class ReviewResult:
     error_message: Optional[str] = None
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
+    # COM 应用修订进度（前端展示用）
+    apply_current: int = 0                # 当前处理到第几条（1-based）
+    apply_total: int = 0                  # 总条数
+    apply_message: str = ""               # 当前正在做什么
 
     @property
     def error_count(self) -> int:
@@ -115,3 +119,6 @@ class TaskStatus:
     issues: list[Issue] = field(default_factory=list)
     download_url: Optional[str] = None
     error_message: Optional[str] = None
+    apply_current: int = 0
+    apply_total: int = 0
+    apply_message: str = ""

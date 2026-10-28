@@ -34,10 +34,14 @@
     const errorSection = document.getElementById("error-section");
     const errorMessage = document.getElementById("error-message");
 
+    const queueSection = document.getElementById("queue-section");
+    const queueTbody = document.getElementById("queue-tbody");
+
     // ---- 状态 ----
     let currentFile = null;
     let taskId = null;
     let pollTimer = null;
+    let queuePollTimer = null;
 
     // ---- 工具函数 ----
     function formatFileSize(bytes) {
@@ -53,11 +57,13 @@
         currentFile = null;
         taskId = null;
         if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+        if (queuePollTimer) { clearInterval(queuePollTimer); queuePollTimer = null; }
         hide(fileInfo);
         hide(progressSection);
         hide(resultSection);
         hide(errorSection);
         hide(btnReset);
+        hide(queueSection);
         btnStart.disabled = true;
         progressFill.style.width = "0%";
         progressFill.classList.remove("indeterminate");
@@ -179,7 +185,95 @@
     function startPolling() {
         if (pollTimer) clearInterval(pollTimer);
         pollTimer = setInterval(pollStatus, 2000);
+        // 同时轮询队列信息
+        if (queuePollTimer) clearInterval(queuePollTimer);
+        queuePollTimer = setInterval(pollQueue, 3000);
     }
+
+    async function pollQueue() {
+        try {
+            const resp = await fetch("/api/queue");
+            if (!resp.ok) return;
+            const data = await resp.json();
+            renderQueue(data);
+        } catch (err) {
+            // 静默
+        }
+    }
+
+    function formatQueueTime(isoStr) {
+        if (!isoStr) return "";
+        const d = new Date(isoStr);
+        const pad = function (n) { return n < 10 ? "0" + n : "" + n; };
+        return pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+    }
+
+    function renderQueue(data) {
+        var running = data.running;
+        var queued = data.queued || [];
+        var hasContent = running || queued.length > 0;
+
+        if (!hasContent) {
+            queueTbody.innerHTML = '<tr><td colspan="3" class="queue-empty">— 暂无排队 —</td></tr>';
+            if (!running) hide(queueSection);
+        } else {
+            show(queueSection);
+            var html = "";
+            // 正在执行
+            if (running) {
+                var isMine = running.task_id === taskId;
+                html += '<tr>';
+                html += '<td class="queue-time">' + formatQueueTime(running.started_at || running.added_at) + '</td>';
+                html += '<td class="queue-name">';
+                html += '<span class="queue-badge running">执行中</span> ';
+                html += escapeHtml(running.file_name);
+                if (isMine) html += ' <em>（本任务）</em>';
+                html += '</td>';
+                html += '<td>—</td>';
+                html += '</tr>';
+            }
+            // 排队中
+            for (var i = 0; i < queued.length; i++) {
+                var q = queued[i];
+                var isMine = q.task_id === taskId;
+                html += '<tr>';
+                html += '<td class="queue-time">' + formatQueueTime(q.added_at) + '</td>';
+                html += '<td class="queue-name">';
+                html += '<span class="queue-badge">第' + q.position + '位</span> ';
+                html += escapeHtml(q.file_name);
+                if (isMine) html += ' <em>（本任务）</em>';
+                html += '</td>';
+                html += '<td>';
+                if (isMine) {
+                    html += '<button class="queue-cancel" onclick="cancelQueueTask(\'' + q.task_id + '\')">取消排队</button>';
+                } else {
+                    html += '—';
+                }
+                html += '</td>';
+                html += '</tr>';
+            }
+            if (!running && queued.length === 0) {
+                html = '<tr><td colspan="3" class="queue-empty">— 暂无排队 —</td></tr>';
+            }
+            queueTbody.innerHTML = html;
+        }
+    }
+
+    window.cancelQueueTask = async function (id) {
+        if (!confirm("确定要取消排队吗？任务将回退到审核完成状态。")) return;
+        try {
+            const resp = await fetch("/api/cancel/" + id, { method: "POST" });
+            if (!resp.ok) {
+                const err = await resp.json();
+                alert(err.detail || "取消失败");
+                return;
+            }
+            // 清掉 taskId 的 queued 状态，切到 reviewed，让用户重新发起
+            // pollStatus 会自然拿到 reviewed 并展示
+        } catch (e) {
+            alert("网络错误，取消失败");
+        }
+    };
 
     async function pollStatus() {
         if (!taskId) return;
@@ -199,7 +293,8 @@
                     break;
                 case "queued":
                     setProgress(45, "等待 WPS/Word 空闲...");
-                    statusDetail.textContent = "修订任务已排队，等待上一个任务完成后自动执行（COM 单实例串行处理）...";
+                    statusDetail.textContent = "修订任务已排队，等待 WPS/Word COM 资源空闲后自动执行...";
+                    pollQueue();
                     break;
                 case "applying":
                     setProgress(70, "应用修订中...");
@@ -207,19 +302,26 @@
                     break;
                 case "reviewed":
                     setProgress(60, "审核完成，发现 " + status.total_issues + " 个问题");
-                    statusDetail.textContent = "点击「应用修订」生成修订后的文档";
+                    statusDetail.textContent = status.error_message
+                        ? status.error_message + " — 点击下方按钮重新应用修订"
+                        : "点击「应用修订」生成修订后的文档";
+                    if (queuePollTimer) { clearInterval(queuePollTimer); queuePollTimer = null; }
                     break;
                 case "done":
                     setProgress(100, "完成！");
                     statusDetail.textContent = "修订后的文档已生成";
                     clearInterval(pollTimer);
                     pollTimer = null;
+                    if (queuePollTimer) { clearInterval(queuePollTimer); queuePollTimer = null; }
+                    hide(queueSection);
                     showResult(status);
                     break;
                 case "error":
                     setProgress(0, "出错");
                     clearInterval(pollTimer);
                     pollTimer = null;
+                    if (queuePollTimer) { clearInterval(queuePollTimer); queuePollTimer = null; }
+                    hide(queueSection);
                     showError(status.error_message || "处理过程中出现未知错误");
                     break;
                 default:
