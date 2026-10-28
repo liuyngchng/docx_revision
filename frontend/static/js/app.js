@@ -315,16 +315,15 @@
                     pollQueue();
                     break;
                 case "applying":
-                    setProgress(70, "应用修订中...");
                     if (status.apply_current > 0 && status.apply_total > 0) {
+                        var ratio = status.apply_current / status.apply_total;
+                        setProgress(Math.round(ratio * 100), "应用修订中...");
                         statusDetail.textContent =
                             status.apply_message +
                             " (" + status.apply_current + "/" + status.apply_total + ")" +
                             elapsedText();
-                        // 动态推进进度条：基础 70% + 按完成比例加到 95%
-                        var ratio = status.apply_current / status.apply_total;
-                        setProgress(70 + Math.round(ratio * 25), "应用修订中...");
                     } else {
+                        setProgress(0, "应用修订中...");
                         statusDetail.textContent = "正在通过 WPS COM 以修订模式应用修改..." +
                             elapsedText();
                     }
