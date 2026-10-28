@@ -33,6 +33,9 @@ Desktop.ini
 # 日志
 *.log
 
+# 配置文件：cfg.yml 含 API Key 等敏感信息，禁止入库；只提交模板
 **/*.yml
+!cfg.yml.template
+!**/cfg.yml.template
 
 

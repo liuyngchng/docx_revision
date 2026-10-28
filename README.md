@@ -34,8 +34,8 @@ python run.py
 
 ```yaml
 com:
-  prog_id: "WPS.Application"   # WPS企业版用这个；Word用 "Word.Application"
-  visible: false               # 是否显示 WPS/Word 窗口
+  prog_id: ["Kwps.Application", "Word.Application"]  # WPS文字的ProgID是Kwps.Application；列表按顺序自动探测
+  visible: false               # 是否显示 WPS/Word 窗口（仅对系统自建实例生效）
   display_alerts: false        # 是否弹出保存对话框
 
 llm:
@@ -127,4 +127,5 @@ docx_revision/
 1. **本机必须有 WPS 或 Word**：COM 路线依赖已安装的 Office 软件。`com.prog_id` 需正确配置。
 2. **中文字体**：WPS 中文字体需通过 `Font.NameFarEast` 设置（代码已处理）。
 3. **LLM 返回格式**：需要 OpenAI 兼容的 `/chat/completions` 端点，且支持 `response_format: {"type": "json_object"}`（用于结构化审核结果）。如果你们的 API 不支持这个参数，可在 `llm/client.py` 中关闭。
-4. **并发限制**：COM 是单线程模型，同一时刻只能处理一个文档（当前实现按任务排队，后续可扩展队列）。
+4. **并发限制**：COM 是单线程模型，同一时刻只能处理一个文档。系统通过全局锁串行化所有修订任务：任务进入 `queued` 状态排队，等待 WPS/Word 空闲后自动执行（最长等待 10 分钟）。
+5. **实例安全**：若本机已有正在使用的 WPS/Word，系统会附着使用该实例且不会退出它；仅当实例由本系统启动时才在结束后关闭。

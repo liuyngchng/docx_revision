@@ -74,7 +74,7 @@ class ReviewProcessor:
         return result
 
     def _llm_review(self, doc_path: Path) -> list[Issue]:
-        """调用 LLM 进行内容审核"""
+        """调用 LLM 进行内容审核（长文档分段审核，避免截断漏审）"""
         # 1. 提取文档纯文本
         doc = docx.Document(str(doc_path))
         paragraphs_text = []
@@ -82,24 +82,51 @@ class ReviewProcessor:
             if para.text.strip():
                 paragraphs_text.append(f"[P{i}] {para.text}")
 
-        content = "\n".join(paragraphs_text)
+        if not paragraphs_text:
+            return []
 
-        if len(content) > 15000:
-            content = content[:15000] + "\n\n...（文档过长，已截断）"
+        # 2. 分段：每段不超过 CHUNK_CHARS，按段落边界切分
+        chunk_chars = 12000
+        chunks: list[list[str]] = []
+        current: list[str] = []
+        current_len = 0
+        for para_text in paragraphs_text:
+            if current and current_len + len(para_text) > chunk_chars:
+                chunks.append(current)
+                current, current_len = [], 0
+            current.append(para_text)
+            current_len += len(para_text)
+        if current:
+            chunks.append(current)
 
-        # 2. 构造消息
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": USER_PROMPT_TEMPLATE.format(
-                file_name=doc_path.name,
-                content=content,
-            )},
-        ]
+        # 3. 逐段调用 LLM 审核
+        all_issues: list[Issue] = []
+        chunk_errors: list[str] = []
+        for i, chunk in enumerate(chunks):
+            content = "\n".join(chunk)
+            messages = [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": USER_PROMPT_TEMPLATE.format(
+                    file_name=doc_path.name,
+                    part_info=f"（文档共 {len(chunks)} 段，这是第 {i + 1} 段）"
+                              if len(chunks) > 1 else "",
+                    content=content,
+                )},
+            ]
+            try:
+                response_json = self.llm_client.chat_json(messages)
+                all_issues.extend(self._parse_llm_issues(response_json))
+            except Exception as e:
+                chunk_errors.append(f"第{i + 1}段: {e}")
 
-        # 3. 调用 LLM
-        response_json = self.llm_client.chat_json(messages)
+        # 全部段落失败才抛错；部分失败返回已审核结果
+        if chunk_errors and len(chunk_errors) == len(chunks):
+            raise RuntimeError(f"LLM 审核失败: {'; '.join(chunk_errors)}")
+        return all_issues
 
-        # 4. 解析为 Issue 对象
+    @staticmethod
+    def _parse_llm_issues(response_json: dict) -> list[Issue]:
+        """把 LLM 返回的 JSON 解析为 Issue 对象列表"""
         issues = []
         for item in response_json.get("issues", []):
             # 映射类别

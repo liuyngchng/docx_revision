@@ -17,6 +17,7 @@ class IssueCategory(str, Enum):
     """审核问题的分类"""
     # 格式类（规则引擎）
     PAGE_MARGIN = "page_margin"               # 页边距
+    PAGE_SIZE = "page_size"                   # 纸张幅面
     FONT = "font"                             # 字体字号
     LINE_SPACING = "line_spacing"             # 行距
     INDENT = "indent"                         # 缩进

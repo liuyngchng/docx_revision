@@ -18,7 +18,8 @@ import yaml
 @dataclass
 class ComConfig:
     """WPS/Word COM 相关配置"""
-    prog_id: str = "WPS.Application"
+    # WPS 文字的 COM ProgID 是 "Kwps.Application"（不是 "WPS.Application"）
+    prog_id: str = "Kwps.Application"
     visible: bool = False
     display_alerts: bool = False
 
@@ -124,7 +125,7 @@ def load_config(config_path: Optional[str | Path] = None) -> AppConfig:
 
     _config = AppConfig(
         com=ComConfig(
-            prog_id=com_raw.get("prog_id", "WPS.Application"),
+            prog_id=com_raw.get("prog_id", "Kwps.Application"),
             visible=com_raw.get("visible", False),
             display_alerts=com_raw.get("display_alerts", False),
         ),

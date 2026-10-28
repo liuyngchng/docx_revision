@@ -48,16 +48,15 @@ def parse_args():
 def main():
     args = parse_args()
 
-    # 加载配置以获取端口等信息
-    from backend.core.config import load_config
+    # 创建应用（内部加载配置），再取配置展示启动信息
     from backend.api.routes import create_app
+    from backend.core.config import get_config
 
-    config = load_config(args.config)
+    app = create_app(args.config)
+    config = get_config()
 
     host = args.host or config.server.host
     port = args.port or config.server.port
-
-    app = create_app(args.config)
 
     if not args.no_browser:
         url = f"http://{host}:{port}"

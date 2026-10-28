@@ -2,20 +2,142 @@
 FastAPI 路由：上传文档、触发审核、下载修订后的文件。
 """
 
-import os
+import json
 import shutil
+import time
 import uuid
+from dataclasses import asdict
 from pathlib import Path
 from datetime import datetime
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
+from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.core.config import get_config, load_config
-from backend.core.models import ReviewResult, TaskStatus
+from backend.core.models import (
+    Issue, IssueCategory, IssueSeverity, ReviewResult, TaskStatus,
+)
 from backend.review.processor import ReviewProcessor
 from backend.revision.applier import apply_revisions as apply_revisions_com
+
+
+# ---------------------------------------------------------------------------
+# 任务状态持久化（JSON 文件，重启不丢任务状态）
+# ---------------------------------------------------------------------------
+
+def _issue_to_dict(i: Issue) -> dict:
+    d = asdict(i)
+    d["category"] = i.category.value
+    d["severity"] = i.severity.value
+    return d
+
+
+def _issue_from_dict(d: dict) -> Issue:
+    d = dict(d)
+    d["category"] = IssueCategory(d["category"])
+    d["severity"] = IssueSeverity(d["severity"])
+    return Issue(**d)
+
+
+def _result_to_dict(r: ReviewResult) -> dict:
+    return {
+        "task_id": r.task_id,
+        "file_name": r.file_name,
+        "issues": [_issue_to_dict(i) for i in r.issues],
+        "status": r.status,
+        "error_message": r.error_message,
+        "started_at": r.started_at.isoformat() if r.started_at else None,
+        "finished_at": r.finished_at.isoformat() if r.finished_at else None,
+    }
+
+
+def _result_from_dict(d: dict) -> ReviewResult:
+    return ReviewResult(
+        task_id=d["task_id"],
+        file_name=d["file_name"],
+        issues=[_issue_from_dict(i) for i in d.get("issues", [])],
+        status=d["status"],
+        error_message=d.get("error_message"),
+        started_at=datetime.fromisoformat(d["started_at"]) if d.get("started_at") else None,
+        finished_at=datetime.fromisoformat(d["finished_at"]) if d.get("finished_at") else None,
+    )
+
+
+class TaskStore:
+    """任务状态存储：内存 + JSON 文件持久化。"""
+
+    def __init__(self, path: Path):
+        self.path = path
+        self.data: dict[str, ReviewResult] = {}
+        self._load()
+
+    def _load(self):
+        if not self.path.exists():
+            return
+        try:
+            raw = json.loads(self.path.read_text(encoding="utf-8"))
+            self.data = {
+                k: _result_from_dict(v) for k, v in raw.items()
+            }
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            self.data = {}
+
+    def save(self):
+        try:
+            self.path.write_text(
+                json.dumps(
+                    {k: _result_to_dict(v) for k, v in self.data.items()},
+                    ensure_ascii=False, indent=2,
+                ),
+                encoding="utf-8",
+            )
+        except OSError:
+            pass  # 持久化失败不影响主流程
+
+    def __contains__(self, key):
+        return key in self.data
+
+    def __getitem__(self, key):
+        return self.data[key]
+
+    def __setitem__(self, key, value):
+        self.data[key] = value
+        self.save()
+
+    def prune(self, days: int):
+        """清理超过保留天数的已完成/出错任务。"""
+        cutoff = time.time() - days * 86400
+        stale = []
+        for task_id, r in self.data.items():
+            ts = r.finished_at or r.started_at
+            if ts is not None and ts.timestamp() < cutoff and r.status in ("done", "error"):
+                stale.append(task_id)
+        for task_id in stale:
+            del self.data[task_id]
+        if stale:
+            self.save()
+
+
+# ---------------------------------------------------------------------------
+# 过期文件清理
+# ---------------------------------------------------------------------------
+
+def cleanup_old_files(config, days: int) -> int:
+    """删除 uploads/output 中超过保留天数的文件，返回删除数量。"""
+    cutoff = time.time() - days * 86400
+    removed = 0
+    for d in (Path(config.server.upload_dir), Path(config.server.output_dir)):
+        if not d.exists():
+            continue
+        for f in d.iterdir():
+            try:
+                if f.is_file() and f.stat().st_mtime < cutoff:
+                    f.unlink()
+                    removed += 1
+            except OSError:
+                pass
+    return removed
 
 
 # ---------------------------------------------------------------------------
@@ -38,6 +160,13 @@ def create_app(config_path: str | None = None) -> FastAPI:
     upload_dir.mkdir(parents=True, exist_ok=True)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # 任务状态存储（内存 + JSON 持久化，重启不丢）
+    task_store = TaskStore(output_dir / "task_store.json")
+
+    # 启动时清理过期文件与过期任务
+    cleanup_old_files(config, config.server.cleanup_days)
+    task_store.prune(config.server.cleanup_days)
+
     # 前端静态文件
     frontend_dir = Path(__file__).resolve().parent.parent.parent / "frontend"
     static_dir = frontend_dir / "static"
@@ -45,9 +174,6 @@ def create_app(config_path: str | None = None) -> FastAPI:
 
     if static_dir.exists():
         app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
-
-    # 任务状态存储（内存，后续可换 Redis）
-    task_store: dict[str, ReviewResult] = {}
 
     # ------------------------------------------------------------------
     # 路由
@@ -115,8 +241,9 @@ def create_app(config_path: str | None = None) -> FastAPI:
 
         result.status = "processing"
         result.started_at = datetime.now()
+        task_store.save()
 
-        # 同步执行审核（后台任务）
+        # 后台执行审核
         def run_review():
             try:
                 processor = ReviewProcessor(config)
@@ -128,6 +255,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 result.error_message = str(e)
             finally:
                 result.finished_at = datetime.now()
+                task_store.save()
 
         background_tasks.add_task(run_review)
 
@@ -184,7 +312,8 @@ def create_app(config_path: str | None = None) -> FastAPI:
             raise HTTPException(404, "原始文件未找到")
         doc_path = files[0]
 
-        result.status = "applying"
+        result.status = "queued"  # 等待 WPS/Word COM 空闲（COM 单实例，串行执行）
+        task_store.save()
 
         output_dir = Path(config.server.output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -192,22 +321,27 @@ def create_app(config_path: str | None = None) -> FastAPI:
 
         def run_apply():
             try:
-                apply_revisions_com(
+                result.status = "applying"
+                task_store.save()
+                outcome = apply_revisions_com(
                     doc_path, result.issues, output_path, config.com
                 )
+                stats = outcome.get("stats", {})
+                print(f"[apply] {task_id} stats={stats}")
                 result.status = "done"
             except Exception as e:
                 result.status = "error"
                 result.error_message = f"应用修订失败: {e}"
             finally:
                 result.finished_at = datetime.now()
+                task_store.save()
 
         background_tasks.add_task(run_apply)
 
         return JSONResponse({
             "task_id": task_id,
-            "status": "applying",
-            "message": "正在应用修订...",
+            "status": "queued",
+            "message": "已加入修订队列，等待 WPS/Word 空闲后自动执行...",
         })
 
     @app.post("/api/review-and-apply/{task_id}")
@@ -226,6 +360,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
 
         result.status = "processing"
         result.started_at = datetime.now()
+        task_store.save()
 
         output_dir = Path(config.server.output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -237,23 +372,28 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 processor = ReviewProcessor(config)
                 review_result = processor.review(doc_path)
                 result.issues = review_result.issues
+                task_store.save()
 
                 if not result.issues:
                     result.status = "done"
                     shutil.copy(doc_path, output_path)
                     return
 
-                # 2. 通过 COM 以修订模式应用修改
-                result.status = "applying"
-                apply_revisions_com(
+                # 2. 排队并通过 COM 以修订模式应用修改
+                result.status = "queued"
+                task_store.save()
+                outcome = apply_revisions_com(
                     doc_path, result.issues, output_path, config.com
                 )
+                stats = outcome.get("stats", {})
+                print(f"[apply] {task_id} stats={stats}")
                 result.status = "done"
             except Exception as e:
                 result.status = "error"
                 result.error_message = str(e)
             finally:
                 result.finished_at = datetime.now()
+                task_store.save()
 
         background_tasks.add_task(run_all)
 
@@ -289,19 +429,24 @@ def create_app(config_path: str | None = None) -> FastAPI:
 
     @app.get("/api/health")
     async def health():
-        """健康检查"""
+        """健康检查：实际探测 WPS/Word COM 是否可用（不只检查 pywin32）"""
         wps_available = False
+        wps_detail = ""
         try:
             from backend.revision.applier import ComRevisionApplier
             applier = ComRevisionApplier(config.com)
-            applier._ensure_com_available()
+            prog_id = applier.connect()
             wps_available = True
-        except Exception:
-            pass
+            wps_detail = prog_id
+            applier.close()
+        except Exception as e:
+            wps_detail = str(e)
 
         return {
             "status": "ok",
             "wps_com_available": wps_available,
+            "wps_prog_id": wps_detail if wps_available else None,
+            "wps_error": None if wps_available else wps_detail,
         }
 
     return app

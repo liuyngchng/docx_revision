@@ -5,6 +5,40 @@
 > 总体结论：架构方向正确（规则引擎读 XML + LLM 内容审核 + COM 修订 + Web 上传下载），
 > 但存在 6 个致命问题（其中 1 个有用户数据丢失风险、3 个导致全量误报/漏报、1 个会改错段落），上线前必须修复。
 
+## 修复状态（2026-10-28 更新）
+
+| 编号 | 状态 | 说明 |
+|------|------|------|
+| #1 ProgID | ✅ 已修复 | 默认 `Kwps.Application`，cfg.yml 改为列表自动探测 |
+| #2 COM 实例管理 | ✅ 已修复 | GetActiveObject 探测 + DispatchEx；仅自建实例才 Quit，绝不退出用户实例 |
+| #3 行距提取 | ✅ 已修复 | Length 用 `.pt` 取磅值，倍数型单独处理；回归测试 0 误报 |
+| #4 firstLineChars | ✅ 已修复 | 读 `w:ind/@w:firstLineChars` 换算磅值 |
+| #5 并发串行化 | ✅ 已修复 | 全局锁，任务进入 `queued` 状态排队（最长等 10 分钟），前端已支持 |
+| #6 段落定位一致性 | ✅ 已修复 | COM 端按正文段落枚举（跳过表格内段落）；找不到时跳过并告警 |
+| #7 幅面修不掉 | ✅ 已修复 | 新增 `PAGE_SIZE` 类别，应用时调 `set_page_size` |
+| #8 替换失败计成功 | ✅ 已修复 | 检查 `replace_text_one` 返回值，统计含 warnings 列表 |
+| #9 版头误判标题 | ✅ 已修复 | 文号/签发人/份号/密级/紧急程度/机关标志先于标题判断；标题兜底收紧为"以文种词结尾" |
+| #10 样式继承 | ✅ 已修复 | run → 段落样式链 → docDefaults 解析，中文字体优先读 `w:eastAsia` |
+| #11 小标宋匹配 | ✅ 已修复 | 标题字体允许 方正小标宋各变体/华文中宋（匹配"小标宋"子串） |
+| #12 health 探测 | ✅ 已修复 | 实际 Dispatch 探测，返回 prog_id 或错误详情 |
+| #13 版头检查 | ✅ 已修复 | 文号/签发人 3 号仿宋检查；份号 6 位阿拉伯数字 + 3 号黑体；密级/紧急程度 3 号黑体；机关标志按角色跳过避免误报 |
+| #14 落款检查 | ✅ 已修复 | signature/date/annotation 增加 3 号仿宋检查 |
+| #15 页码检查 | ✅ 已修复 | 读 footer XML：PAGE 域、四号宋体、一字线 |
+| #16 LLM 截断/定位 | ✅ 已修复 | 长文档按段落边界分段审核（每段约 12000 字符），部分失败不阻塞；提示词强调 original_text 逐字精确摘录 |
+| #17 持久化/清理 | ✅ 已修复 | task_store JSON 持久化；启动时按 cleanup_days 清理文件与任务 |
+| #18 杂项 | ✅ 已修复 | jinja2 依赖已移除；CoInitialize/CoUninitialize 对称且处理 RPC_E_CHANGED_MODE；run.py 重复 load_config 已消除 |
+
+### TODO：待 Windows 环境实测（Linux 上无法测的部分）
+
+- [ ] **TODO-1** WPS 企业版/专业版上 `DispatchEx("Kwps.Application")` 实际可用性（含附着已有实例的行为）
+      —— 启动 `python run.py` 后访问 `/api/health`，`wps_com_available` 应为 true 且 `wps_prog_id` 为 Kwps.Application
+- [ ] **TODO-2** TrackRevisions 下各操作（替换/字体/缩进/行距/页边距）是否都生成预期修订标记
+      —— 上传一份错乱公文走完整流程，用 WPS 打开输出文件逐类检查修订标记（w:ins/w:del、rPrChange、pPrChange、sectPrChange）
+- [ ] **TODO-3** 用户开着 WPS 时提交任务：确认不隐藏用户窗口、不退出用户实例
+      —— 先手动打开 WPS 并编辑一个文档，再提交审核任务，确认窗口始终可见、任务结束后 WPS 不退出、文档不丢
+- [ ] **TODO-4** 并发两个任务：第二个进入 queued 状态并自动接续执行
+      —— 连续上传提交两个任务，观察第二个在前端显示 queued（等待 WPS/Word 空闲...），第一个完成后自动开始应用修订
+
 ---
 
 ## 一、致命问题（P0）

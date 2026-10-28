@@ -197,6 +197,10 @@
                     setProgress(40, "审核中...");
                     statusDetail.textContent = "正在执行格式规则检查和 LLM 内容审核...";
                     break;
+                case "queued":
+                    setProgress(45, "等待 WPS/Word 空闲...");
+                    statusDetail.textContent = "修订任务已排队，等待上一个任务完成后自动执行（COM 单实例串行处理）...";
+                    break;
                 case "applying":
                     setProgress(70, "应用修订中...");
                     statusDetail.textContent = "正在通过 WPS COM 以修订模式应用修改...";

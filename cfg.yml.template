@@ -8,16 +8,17 @@
 
 com:
   # 应用程序 ProgID，根据安装的软件选择：
-  #   WPS 企业版:  "WPS.Application"
-  #   WPS 专业版:  "WPS.Application"
+  #   WPS 文字:    "Kwps.Application"   ← 注意不是 "WPS.Application"
   #   Word:        "Word.Application"
-  # 也可写成列表自动探测：["WPS.Application", "Word.Application"]
-  prog_id: "WPS.Application"
+  # 推荐写成列表自动探测：["Kwps.Application", "Word.Application"]
+  prog_id: ["Kwps.Application", "Word.Application"]
 
-  # 是否显示 WPS/Word 窗口（调试时可设为 true）
+  # 是否显示 WPS/Word 窗口（调试时可设为 true）。
+  # 注意：若本机已有正在使用的 WPS/Word 实例，系统会附着使用该实例，
+  # 不修改其窗口可见性，也不在结束后退出它（保护用户正在编辑的文档）。
   visible: false
 
-  # 是否弹出保存警告对话框
+  # 是否弹出保存警告对话框（仅对系统自建实例生效）
   display_alerts: false
 
 # ---------------------------------------------------------------------------
