@@ -10,11 +10,23 @@
 """
 
 import argparse
+import logging
 import sys
 import webbrowser
 from pathlib import Path
 
 import uvicorn
+
+
+def _setup_logging():
+    """配置全局日志，输出到控制台，便于排查审核过程"""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+        stream=sys.stdout,
+        force=True,
+    )
 
 
 def parse_args():
@@ -47,6 +59,7 @@ def parse_args():
 
 def main():
     args = parse_args()
+    _setup_logging()
 
     # 加载配置以获取端口等信息
     from backend.core.config import load_config

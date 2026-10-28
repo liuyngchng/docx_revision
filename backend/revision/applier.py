@@ -11,7 +11,7 @@
 修订标记由 WPS/Word 自动生成，格式 100% 原生，任意 Office 软件可正常显示。
 
 WPS 企业版兼容性说明：
-  - WPS 文字组件的 COM ProgID 为 "WPS.Application"
+  - WPS 文字组件的 COM ProgID 为 "KWPS.Application"（个人版）或 "WPS.Application"（企业版）
   - WPS 兼容 Word 的大部分 COM 接口（Document、Paragraph、Range、Font 等）
   - 中文字体必须通过 Font.NameFarEast 设置，Font.Name 可能被忽略
   - SaveAs/SaveAs2 均可用，FileFormat=12 对应 wdFormatXMLDocument (.docx)

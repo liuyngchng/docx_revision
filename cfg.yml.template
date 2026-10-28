@@ -8,11 +8,11 @@
 
 com:
   # 应用程序 ProgID，根据安装的软件选择：
-  #   WPS 企业版:  "WPS.Application"
-  #   WPS 专业版:  "WPS.Application"
-  #   Word:        "Word.Application"
-  # 也可写成列表自动探测：["WPS.Application", "Word.Application"]
-  prog_id: "WPS.Application"
+  #   WPS 个人版:    "KWPS.Application"
+  #   WPS 企业版:    "WPS.Application"
+  #   Word:          "Word.Application"
+  # 也可写成列表自动探测：["KWPS.Application", "WPS.Application", "Word.Application"]
+  prog_id: "KWPS.Application"
 
   # 是否显示 WPS/Word 窗口（调试时可设为 true）
   visible: false

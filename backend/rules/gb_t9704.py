@@ -186,11 +186,13 @@ def check_paragraph_format(para_info: dict, para_index: int,
     """
     issues = []
 
-    font_name = para_info.get("font_name", "")
-    font_size = para_info.get("font_size", 0)   # pt
-    alignment = para_info.get("alignment", None)  # 0=left, 1=center, 2=right, 3=justify
-    line_spacing = para_info.get("line_spacing", 0)  # pt
-    first_line_indent = para_info.get("first_line_indent", 0)  # pt
+    # 注意：python-docx 未设置的属性会是 None，`.get(key, default)` 在 key 存在但值为
+    # None 时仍返回 None，因此这里用 `or` 兜底，避免 NoneType 比较崩溃。
+    font_name = para_info.get("font_name") or ""
+    font_size = para_info.get("font_size") or 0   # pt
+    alignment = para_info.get("alignment")  # 0=left, 1=center, 2=right, 3=justify
+    line_spacing = para_info.get("line_spacing") or 0  # pt
+    first_line_indent = para_info.get("first_line_indent") or 0  # pt
     text = para_info.get("text", "").strip()
 
     if not text:
@@ -343,9 +345,9 @@ def check_first_line_indent(para_info: dict, para_index: int,
     if not text.strip():
         return None
     # 根据字号动态计算预期缩进
-    font_size = para_info.get("font_size", SIZE_SAN_HAO)
+    font_size = para_info.get("font_size") or SIZE_SAN_HAO
     expected_indent = font_size * 2  # 2字符
-    actual_indent = para_info.get("first_line_indent", 0)
+    actual_indent = para_info.get("first_line_indent") or 0
     tolerance = 2 if strictness == "strict" else 5
 
     if actual_indent > 0 and abs(actual_indent - expected_indent) > tolerance:

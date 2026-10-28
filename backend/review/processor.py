@@ -2,6 +2,7 @@
 审核处理器：整合规则引擎和 LLM 审查，生成统一的问题清单。
 """
 
+import logging
 from pathlib import Path
 from typing import Optional
 
@@ -12,6 +13,8 @@ from backend.core.models import Issue, IssueCategory, IssueSeverity, ReviewResul
 from backend.rules.engine import RuleEngine
 from backend.llm.client import LlmClient
 from backend.llm.prompts import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE
+
+logger = logging.getLogger(__name__)
 
 
 class ReviewProcessor:
@@ -45,18 +48,24 @@ class ReviewProcessor:
 
         # ---------- 阶段 1：格式规则检查 ----------
         if self.config.review.enable_rules:
+            logger.info("=== 阶段 1：规则引擎格式检查开始 ===")
             try:
                 rule_issues = self.rule_engine.check_document(doc_path)
+                logger.info("规则引擎完成: 发现 %d 个问题", len(rule_issues))
                 all_issues.extend(rule_issues)
             except Exception as e:
+                logger.error("格式规则检查失败: %s", e, exc_info=True)
                 result.error_message = f"格式规则检查失败: {e}"
 
         # ---------- 阶段 2：LLM 内容审核 ----------
         if self.config.review.enable_llm:
+            logger.info("=== 阶段 2：LLM 内容审核开始 ===")
             try:
                 llm_issues = self._llm_review(doc_path)
+                logger.info("LLM 审核完成: 发现 %d 个问题", len(llm_issues))
                 all_issues.extend(llm_issues)
             except Exception as e:
+                logger.error("LLM 审核失败: %s", e, exc_info=True)
                 if result.error_message:
                     result.error_message += f"; LLM 审核失败: {e}"
                 else:
@@ -85,6 +94,9 @@ class ReviewProcessor:
         content = "\n".join(paragraphs_text)
 
         if len(content) > 15000:
+            logger.warning(
+                "文档文本过长（%d 字符），截断到 15000 字符", len(content)
+            )
             content = content[:15000] + "\n\n...（文档过长，已截断）"
 
         # 2. 构造消息
@@ -96,6 +108,12 @@ class ReviewProcessor:
             )},
         ]
 
+        logger.info(
+            "LLM 消息构造完成: system_prompt=%d 字符, user_prompt=%d 字符",
+            len(SYSTEM_PROMPT),
+            len(messages[1]["content"]),
+        )
+
         # 3. 调用 LLM
         response_json = self.llm_client.chat_json(messages)
 
@@ -106,6 +124,7 @@ class ReviewProcessor:
             category_map = {
                 "document_type": IssueCategory.DOCUMENT_TYPE,
                 "title": IssueCategory.TITLE,
+                "addressee": IssueCategory.FORMATTING_NORM,
                 "language": IssueCategory.LANGUAGE,
                 "logic": IssueCategory.LOGIC,
                 "formatting_norm": IssueCategory.FORMATTING_NORM,

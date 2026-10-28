@@ -18,7 +18,7 @@ import yaml
 @dataclass
 class ComConfig:
     """WPS/Word COM 相关配置"""
-    prog_id: str = "WPS.Application"
+    prog_id: str = "KWPS.Application"
     visible: bool = False
     display_alerts: bool = False
 

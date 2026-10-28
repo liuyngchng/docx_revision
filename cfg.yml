@@ -8,7 +8,7 @@ com:
   #   WPS 企业版:  "WPS.Application"
   #   WPS 专业版:  "WPS.Application"
   #   Word:        "Word.Application"
-  prog_id: "WPS.Application"
+  prog_id: "KWPS.Application"
 
   # 是否可见（调试时可开 True，生产环境建议 False）
   visible: false
@@ -19,13 +19,13 @@ com:
 # ---- LLM API 设置 ----
 llm:
   # OpenAI 兼容 API 地址（你们公司的地址）
-  api_base: "https://your-company-api.example.com/v1"
+  api_base: https://e.cnpc.com.cn/klzm-ai-proxy/v1
 
   # API Key
-  api_key: "sk-your-api-key-here"
+  api_key: sk-48ccef0f3d8842e5aee94e9abe707d9f
 
   # 模型名称
-  model: "your-model-name"
+  model: deepseek-v4-pro
 
   # 超时时间（秒）
   timeout: 120
@@ -34,7 +34,7 @@ llm:
   temperature: 0.1
 
   # 最大输出 token 数
-  max_tokens: 4096
+  max_tokens: 8192
 
 # ---- 审核设置 ----
 review:
